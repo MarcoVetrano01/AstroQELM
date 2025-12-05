@@ -4,7 +4,7 @@
 import numpy as np
 import pandas as pd
 import h5py as h5
-from typing import Union, tuple 
+from typing import Union 
 from pathlib import Path
 import qiskit as qt
 from itertools import product
