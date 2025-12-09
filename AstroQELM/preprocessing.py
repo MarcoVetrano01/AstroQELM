@@ -197,7 +197,7 @@ def JWST_interpolation(synth_data: MatrixLike, dense_wl: MatrixLike, synth_wl: M
 
     return np.array(spectra_int), spectral_range
 
-def _spectra_normalization(spectra: MatrixLike, norm_idx: MatrixLike):
+def _spectra_normalization(spectra: MatrixLike, idx: MatrixLike):
     
     '''
     Function to divide the spectra into patches and normalize each in a range [0,1] as done in the work of ExoGAN (Zingales & Waldmann 2018)
@@ -215,13 +215,17 @@ def _spectra_normalization(spectra: MatrixLike, norm_idx: MatrixLike):
         mean_spectra: MatrixLike: average of the spectra before normalization
         norm_spectra: List[MatrixLike]: list containing the normalized patches of the spectra
     '''
-            
-    patch = len(norm_idx) - 1
+    if not isinstance(idx[0], list):
+        norm_idx = [[idx[i], idx[i + 1]] for i in range(len(idx) - 1)]
+    else:
+        norm_idx = idx
+
+    patch = len(norm_idx)
     mean_spectra = np.mean(spectra, 1)
-    fragmented_spectra = []
     norm_spectra = []
-    for i in range(len(norm_idx) - 1):
-        frag = spectra[:,norm_idx[i]:norm_idx[i + 1]]
+
+    for i in range(patch):
+        frag = spectra[:,norm_idx[i][0]:norm_idx[i][1]]
         mm = MinMaxScaler()
         norm_spectra.append(mm.fit_transform(frag.T).T)
     return  mean_spectra, norm_spectra
