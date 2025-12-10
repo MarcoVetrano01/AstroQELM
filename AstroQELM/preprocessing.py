@@ -227,7 +227,7 @@ def _spectra_normalization(spectra: MatrixLike, idx: MatrixLike):
     for i in range(patch):
         frag = spectra[:,norm_idx[i][0]:norm_idx[i][1]]
         mm = MinMaxScaler()
-        norm_spectra.append(mm.fit_transform(frag.T).T)
+        norm_spectra.append(mm.fit_transform(frag))
     return  mean_spectra, norm_spectra
 
 def _feature_extraction(frag_spectra: list, comps: int):
