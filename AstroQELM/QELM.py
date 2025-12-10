@@ -141,13 +141,14 @@ def training(x_train: np.ndarray, y_train: MatrixLike, regularize: bool = True) 
 
     return model
 
-def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , depth: int = 1, shots: int = 1024, train_size: float = 0.8, regularize: bool = True, disable_progress_bar: bool = False) -> Ridge | RidgeCV:
+def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , means: np.ndarray | None = None, depth: int = 1, shots: int = 1024, train_size: float = 0.8, regularize: bool = True, disable_progress_bar: bool = False) -> Ridge | RidgeCV:
 
     """Factorized QELM Wrapper.
      Args:
          data (MatrixLike): Input data to be encoded of shape (patches, n_samples, n_features).
          targets (MatrixLike): Target values of shape (n_samples, n_outputs).
          nq (int): Number of qubits.
+         means (np.ndarray | None): Mean values for data normalization. 
          depth (int): Depth of the reservoir layer.
          shots (int): Number of shots (samples) to simulate.
          train_size (float): Proportion of data to be used for training. Default is 0.8.
@@ -162,7 +163,7 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , depth: int =
     patches = data.shape[0]
     dim = data.shape[1]
     enc_dim = data.shape[2]
-    
+
     if enc_dim > nq:
         raise ValueError("Number of encoded features must be less than or equal to number of qubits.")
     if shots < 1:
@@ -182,6 +183,13 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , depth: int =
 
     results_sf = np.concatenate(results_sf, axis=0).T
     results_si = np.concatenate(results_si, axis=0).T
+    if means is not None:
+        means = map_angle(means)
+        x_patch = means.reshape(-1, 1)
+        result_mean_si, result_mean_sf = Reservoir(nq, x_patch, depth, shots)
+        results_si = np.concatenate((results_si, result_mean_si.T), axis=1)
+        results_sf = np.concatenate((results_sf, result_mean_sf.T), axis=1)
+
     x_train = results_si[:split_idx]
     x_test = results_si[split_idx:]
     W_si = training(x_train, y_train, regularize)
