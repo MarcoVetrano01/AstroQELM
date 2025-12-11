@@ -224,12 +224,20 @@ def _spectra_normalization(spectra: MatrixLike, idx: MatrixLike):
     patch = len(norm_idx)
     mean_spectra = np.mean(spectra, 1)
     norm_spectra = []
-
+    patchwise_properties = np.zeros((patch, spectra.shape[0], 3))
+    mean_spectra = mean_spectra / np.max(mean_spectra)
+    max_spectra = np.max(spectra, 1) / np.max(spectra)
+    min_spectra = np.min(spectra) / np.min(spectra, 1)
+    global_properties = np.array([mean_spectra, max_spectra, min_spectra]).T
     for i in range(patch):
         frag = spectra[:,norm_idx[i][0]:norm_idx[i][1]]
+        patchwise_properties[i, :, 0] = np.median(frag, 1) / np.median(frag)
+        patchwise_properties[i, :, 1] = np.max(frag, 1) / np.max(frag)
+        patchwise_properties[i, :, 2] = np.min(frag, 1) / np.min(frag)
         mm = MinMaxScaler()
         norm_spectra.append(mm.fit_transform(frag.T).T)
-    return  mean_spectra, norm_spectra
+    
+    return  global_properties, norm_spectra, patchwise_properties
 
 def _feature_extraction(frag_spectra: list, comps: int):
     """
@@ -263,10 +271,7 @@ def preprocessing_pipeline(spectra: MatrixLike, norm_idx: MatrixLike, comps: int
         reduced_data (np.ndarray): Array of shape (Patches, samples, comps) containing the reduced spectra
         mean_spectra (MatrixLike): average of the spectra before normalization normalized in [0,1]
     """
-    mean_spectra, frag_spectra = _spectra_normalization(spectra, norm_idx)
+    global_properties, frag_spectra, patchwise_properties = _spectra_normalization(spectra, norm_idx)
     reduced_data = _feature_extraction(frag_spectra, comps)
-    mean_spectra = mean_spectra / np.max(mean_spectra)
-    max_spectra = np.max(spectra, 1) / np.max(spectra)
-    min_spectra = np.min(spectra) / np.min(spectra, 1)
 
-    return reduced_data, np.array([mean_spectra, max_spectra, min_spectra]).T
+    return reduced_data, global_properties, patchwise_properties

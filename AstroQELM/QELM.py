@@ -141,7 +141,7 @@ def training(x_train: np.ndarray, y_train: MatrixLike, regularize: bool = True) 
 
     return model
 
-def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , global_variables: np.ndarray | None = None, depth: int = 1, shots: int = 1024, train_size: float = 0.8, regularize: bool = True, disable_progress_bar: bool = False) -> Ridge | RidgeCV:
+def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , global_properties: np.ndarray | None = None, patchwise_properties: np.ndarray | None = None, depth: int = 1, shots: int = 1024, train_size: float = 0.8, regularize: bool = True, disable_progress_bar: bool = False) -> Ridge | RidgeCV:
 
     """Factorized QELM Wrapper.
      Args:
@@ -183,12 +183,26 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , global_varia
     results_sf = np.concatenate(results_sf, axis=0).T
     results_si = np.concatenate(results_si, axis=0).T
     
-    if global_variables is not None:
+    if global_properties is not None:
         par_mean = np.random.uniform(0, np.pi, size=(depth,  2 * nq))
-        global_variables_mapped = map_angle(global_variables)
-        result_mean_si, result_mean_sf = Reservoir(nq, global_variables_mapped, par_mean, depth, shots)
-        results_si = np.concatenate((results_si, result_mean_si.T), axis=1)
-        results_sf = np.concatenate((results_sf, result_mean_sf.T), axis=1)
+        global_properties_mapped = map_angle(global_properties)
+        result_global_si, result_global_sf = Reservoir(nq, global_properties_mapped, par_mean, depth, shots)
+        results_si = np.concatenate((results_si, result_global_si.T), axis=1)
+        results_sf = np.concatenate((results_sf, result_global_sf.T), axis=1)
+    
+    if patchwise_properties is not None:
+        par_patch = np.random.uniform(0, np.pi, size=(patches, depth,  2 * nq))
+        patchwise_properties_mapped = map_angle(patchwise_properties)
+        results_local_si = np.zeros((patches, 2 ** nq, dim))
+        results_local_sf = np.zeros((patches, 2 ** nq, dim))
+        for i in range(patches):
+            x_patch_prop = patchwise_properties_mapped[i]
+            results_local_si[i], results_local_sf[i] = Reservoir(nq, x_patch_prop, par_patch[i], depth, shots)
+        results_local_sf = np.concatenate(results_local_sf, axis=0).T
+        results_local_si = np.concatenate(results_local_si, axis=0).T
+        results_si =  np.concatenate((results_si, results_local_si), axis=1)
+        results_sf =  np.concatenate((results_sf, results_local_sf), axis=1)
+        
     x_train = results_si[:split_idx]
     x_test = results_si[split_idx:]
     W_si = training(x_train, y_train, regularize)
