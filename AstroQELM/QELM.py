@@ -115,7 +115,7 @@ def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, depth: int = 1, shots:
             result_sf[i] = FiniteStatistics(result_si[i], shots)
         result_sf = result_sf.T
     else:
-        result_sf = None
+        result_sf = np.zeros((2**nq, dim))
 
     result_si = result_si.T
 
