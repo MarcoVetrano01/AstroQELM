@@ -15,7 +15,7 @@ def map_angle(data: MatrixLike):
          MatrixLike: Mapped data.
      """
 
-    data_mapped = data * np.pi
+    data_mapped = data * 2 * np.pi
 
     return data_mapped
 
@@ -44,7 +44,7 @@ def AngleEncoding(nq: int, data: MatrixLike) -> QuantumCircuit:
 
     return quantum_circuits
 
-def ReservoirLayer(qc: QuantumCircuit, depth: int = 1) -> QuantumCircuit:
+def ReservoirLayer(qc: QuantumCircuit, par: np.ndarray,depth: int = 1) -> QuantumCircuit:
 
     """Adds a reservoir layer to the quantum circuit using random CZ gates.
      Args:
@@ -55,14 +55,14 @@ def ReservoirLayer(qc: QuantumCircuit, depth: int = 1) -> QuantumCircuit:
      """
 
     nq = qc.num_qubits
-    par = np.random.uniform(0, 2 * np.pi, size=(depth,  2 * nq))
+    
     for d in range(depth):
 
         for i in range(nq):
             qc.ry(par[d, i], i)
 
         for i in range(nq - 1):
-            qc.cz(i, i + 1)
+            qc.cx(i, i + 1)
         
         for i in range(nq):
             qc.ry(par[d, i + nq], i)
@@ -71,7 +71,7 @@ def ReservoirLayer(qc: QuantumCircuit, depth: int = 1) -> QuantumCircuit:
 
     return Statevector(qc).probabilities()
 
-def FiniteStatistics(probabilities: np.ndarray, shots: int) -> np.ndarray:
+def FiniteStatistics(probabilities: MatrixLike, shots: int) -> np.ndarray:
 
     """Inserts statistical shot noise in the results.
      Args:
@@ -85,7 +85,7 @@ def FiniteStatistics(probabilities: np.ndarray, shots: int) -> np.ndarray:
 
     return stats
 
-def Reservoir(nq: int, data: MatrixLike, depth: int = 1, shots: int = 1024) -> np.ndarray:
+def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, depth: int = 1, shots: int = 1024) -> np.ndarray:
 
     """Reservoir Wrapper.
      Args:
@@ -106,7 +106,7 @@ def Reservoir(nq: int, data: MatrixLike, depth: int = 1, shots: int = 1024) -> n
         qc = AngleEncoding(nq, data[i])
 
         # Add reservoir layer
-        result_si[i] = ReservoirLayer(qc, depth)
+        result_si[i] = ReservoirLayer(qc, par, depth)
 
     if shots > 1:
         result_sf = np.zeros((dim, 2 ** nq))
@@ -133,7 +133,7 @@ def training(x_train: np.ndarray, y_train: MatrixLike, regularize: bool = True) 
      """
 
     if regularize:
-        model = RidgeCV(alphas=np.logspace(-10, 10, 100))
+        model = RidgeCV(alphas=np.logspace(-7, 2, 100))
     else:
         model = Ridge(alpha=0.0, solver = 'svd')
 
@@ -141,7 +141,7 @@ def training(x_train: np.ndarray, y_train: MatrixLike, regularize: bool = True) 
 
     return model
 
-def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , means: np.ndarray | None = None, depth: int = 1, shots: int = 1024, train_size: float = 0.8, regularize: bool = True, disable_progress_bar: bool = False) -> Ridge | RidgeCV:
+def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , global_variables: np.ndarray | None = None, depth: int = 1, shots: int = 1024, train_size: float = 0.8, regularize: bool = True, disable_progress_bar: bool = False) -> Ridge | RidgeCV:
 
     """Factorized QELM Wrapper.
      Args:
@@ -163,7 +163,7 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , means: np.nd
     patches = data.shape[0]
     dim = data.shape[1]
     enc_dim = data.shape[2]
-
+    par = np.random.uniform(0, np.pi, size=(patches, depth,  2 * nq))
     if enc_dim > nq:
         raise ValueError("Number of encoded features must be less than or equal to number of qubits.")
     if shots < 1:
@@ -179,17 +179,16 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , means: np.nd
     results_sf = np.zeros((patches, 2 ** nq, dim))
     for i in tqdm(range(patches), desc="Processing patches", disable = disable_progress_bar):
         x_patch = data_mapped[i]
-        results_si[i], results_sf[i] = Reservoir(nq, x_patch, depth, shots)
-
+        results_si[i], results_sf[i] = Reservoir(nq, x_patch, par[i], depth, shots)
     results_sf = np.concatenate(results_sf, axis=0).T
     results_si = np.concatenate(results_si, axis=0).T
-    if means is not None:
-        means = map_angle(means)
-        x_patch = means.reshape(-1, 1)
-        result_mean_si, result_mean_sf = Reservoir(nq, x_patch, depth, shots)
+    
+    if global_variables is not None:
+        par_mean = np.random.uniform(0, np.pi, size=(depth,  2 * nq))
+        global_variables_mapped = map_angle(global_variables)
+        result_mean_si, result_mean_sf = Reservoir(nq, global_variables_mapped, par_mean, depth, shots)
         results_si = np.concatenate((results_si, result_mean_si.T), axis=1)
         results_sf = np.concatenate((results_sf, result_mean_sf.T), axis=1)
-
     x_train = results_si[:split_idx]
     x_test = results_si[split_idx:]
     W_si = training(x_train, y_train, regularize)

@@ -197,7 +197,8 @@ def JWST_interpolation(synth_data: MatrixLike, dense_wl: MatrixLike, synth_wl: M
 
     return np.array(spectra_int), spectral_range
 
-def _spectra_normalization(spectra, idx):
+
+def _spectra_normalization(spectra: MatrixLike, idx: MatrixLike):
     
     '''
     Function to divide the spectra into patches and normalize each in a range [0,1] as done in the work of ExoGAN (Zingales & Waldmann 2018)
@@ -230,7 +231,7 @@ def _spectra_normalization(spectra, idx):
         norm_spectra.append(mm.fit_transform(frag.T).T)
     return  mean_spectra, norm_spectra
 
-def _feature_extraction(frag_spectra, comps):
+def _feature_extraction(frag_spectra: list, comps: int):
     """
     Apply PCA to each fragment of the spectra and reduce its dimensionality. Principal components are normalized in [0,1]
     Args:
@@ -251,7 +252,7 @@ def _feature_extraction(frag_spectra, comps):
     reduced_data = np.transpose(reduced_data/(np.max(reduced_data,0)),[1,0,2])
     return reduced_data
 
-def preprocessing_pipeline(spectra, norm_idx, comps):
+def preprocessing_pipeline(spectra: MatrixLike, norm_idx: MatrixLike, comps: int):
     """
     Wrapper function to preprocess the spectra: normalization and feature extraction with PCA.
     Args:
@@ -264,6 +265,8 @@ def preprocessing_pipeline(spectra, norm_idx, comps):
     """
     mean_spectra, frag_spectra = _spectra_normalization(spectra, norm_idx)
     reduced_data = _feature_extraction(frag_spectra, comps)
-    mm = MinMaxScaler()
-    mean_spectra = mm.fit_transform(mean_spectra.reshape(-1,1)).flatten()
-    return reduced_data, mean_spectra
+    mean_spectra = mean_spectra / np.max(mean_spectra)
+    max_spectra = np.max(spectra, 1) / np.max(spectra)
+    min_spectra = np.min(spectra) / np.min(spectra, 1)
+
+    return reduced_data, np.array([mean_spectra, max_spectra, min_spectra]).T
