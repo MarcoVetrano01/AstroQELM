@@ -85,7 +85,7 @@ def FiniteStatistics(probabilities: MatrixLike, shots: int) -> np.ndarray:
 
     return stats
 
-def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, depth: int = 1, shots: int = 1024) -> np.ndarray:
+def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, depth: int = 1, shots: int = 1024, disable_progress_bar: bool = True) -> np.ndarray:
 
     """Reservoir Wrapper.
      Args:
@@ -102,7 +102,7 @@ def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, depth: int = 1, shots:
     # Create quantum circuit
     result_si = np.zeros((dim, 2 ** nq))        
 
-    for i in range(dim):
+    for i in tqdm(range(dim), disable = disable_progress_bar):
         qc = AngleEncoding(nq, data[i])
 
         # Add reservoir layer
@@ -184,9 +184,10 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , global_prope
     results_si = np.concatenate(results_si, axis=0).T
     
     if global_properties is not None:
+        print("Processing global properties...")
         par_mean = np.random.uniform(0, np.pi, size=(depth,  2 * nq))
         global_properties_mapped = map_angle(global_properties)
-        result_global_si, result_global_sf = Reservoir(nq, global_properties_mapped, par_mean, depth, shots)
+        result_global_si, result_global_sf = Reservoir(nq, global_properties_mapped, par_mean, depth, shots, False)
         results_si = np.concatenate((results_si, result_global_si.T), axis=1)
         results_sf = np.concatenate((results_sf, result_global_sf.T), axis=1)
     
@@ -195,14 +196,14 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , global_prope
         patchwise_properties_mapped = map_angle(patchwise_properties)
         results_local_si = np.zeros((patches, 2 ** nq, dim))
         results_local_sf = np.zeros((patches, 2 ** nq, dim))
-        for i in range(patches):
+        for i in tqdm(range(patches), desc="Processing local properties", disable = disable_progress_bar):
             x_patch_prop = patchwise_properties_mapped[i]
             results_local_si[i], results_local_sf[i] = Reservoir(nq, x_patch_prop, par_patch[i], depth, shots)
         results_local_sf = np.concatenate(results_local_sf, axis=0).T
         results_local_si = np.concatenate(results_local_si, axis=0).T
         results_si =  np.concatenate((results_si, results_local_si), axis=1)
         results_sf =  np.concatenate((results_sf, results_local_sf), axis=1)
-        
+
     x_train = results_si[:split_idx]
     x_test = results_si[split_idx:]
     W_si = training(x_train, y_train, regularize)
