@@ -167,18 +167,16 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , global_prope
     dim = data.shape[1]
     enc_dim = data.shape[2]
     par = np.random.uniform(0, np.pi, size=(patches, depth,  2 * nq))
-    
+    shots = np.array(shots, dtype = int)
+
     if enc_dim > nq:
         raise ValueError("Number of encoded features must be less than or equal to number of qubits.")
-    if shots < 1:
-        raise ValueError("Number of shots must be at least 1.")
-    if isinstance(shots, MatrixLike):
-        if np.any(shots < 1):
-            raise ValueError("All shots must be at least 1.")
+    if np.any(shots < 1):
+        raise ValueError("All shots must be at least 1.")
     if not (0 < train_size < 1):
         raise ValueError("Train size must be between 0 and 1.")
     
-    shots = np.array(shots, dtype = int)
+    
     stat = len(shots)
     split_idx = int(dim * train_size)
     y_train = targets[:split_idx]
