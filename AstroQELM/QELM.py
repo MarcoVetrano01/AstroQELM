@@ -85,7 +85,7 @@ def FiniteStatistics(probabilities: MatrixLike, shots: int) -> np.ndarray:
 
     return stats
 
-def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, depth: int = 1, shots: int = 1024, disable_progress_bar: bool = True) -> np.ndarray:
+def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, depth: int = 1, shots: int | MatrixLike = 1024, disable_progress_bar: bool = True) -> np.ndarray:
 
     """Reservoir Wrapper.
      Args:
@@ -101,21 +101,23 @@ def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, depth: int = 1, shots:
 
     # Create quantum circuit
     result_si = np.zeros((dim, 2 ** nq))        
-
+    stat = len(shots)
     for i in tqdm(range(dim), disable = disable_progress_bar):
         qc = AngleEncoding(nq, data[i])
 
         # Add reservoir layer
         result_si[i] = ReservoirLayer(qc, par, depth)
 
-    if shots > 1:
-        result_sf = np.zeros((dim, 2 ** nq))
+    if np.any(shots > 1):
+        result_sf = np.zeros((stat, dim, 2 ** nq))
         # Compute finite statistics
-        for i in range(dim):
-            result_sf[i] = FiniteStatistics(result_si[i], shots)
-        result_sf = result_sf.T
+        for k in range(stat):
+            for i in range(dim):
+                result_sf[k, i] = FiniteStatistics(result_si[i], shots[k])
+        result_sf = np.transpose(result_sf, (2, 0, 1))
+        
     else:
-        result_sf = np.zeros((2**nq, dim))
+        result_sf = np.zeros((2 ** nq, stat, dim))
 
     result_si = result_si.T
 
@@ -141,7 +143,7 @@ def training(x_train: np.ndarray, y_train: MatrixLike, regularize: bool = True) 
 
     return model
 
-def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , global_properties: np.ndarray | None = None, patchwise_properties: np.ndarray | None = None, depth: int = 1, shots: int = 1024, train_size: float = 0.8, regularize: bool = True, disable_progress_bar: bool = False) -> Ridge | RidgeCV:
+def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , global_properties: np.ndarray | None = None, patchwise_properties: np.ndarray | None = None, depth: int = 1, shots: int | MatrixLike = 1024, train_size: float = 0.8, regularize: bool = True, disable_progress_bar: bool = False) -> MatrixLike:
 
     """Factorized QELM Wrapper.
      Args:
@@ -154,67 +156,79 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , global_prope
          train_size (float): Proportion of data to be used for training. Default is 0.8.
          regularize (bool): Whether to use regularization. Default is True.
      Returns:
-         Ridge | RidgeCV: Trained Ridge regression model.
+         MatrixLike: Predicted values.
      """
 
     data = np.array(data)
+    targets = np.array(targets)
     data_mapped = map_angle(data)
 
     patches = data.shape[0]
     dim = data.shape[1]
     enc_dim = data.shape[2]
     par = np.random.uniform(0, np.pi, size=(patches, depth,  2 * nq))
+    
     if enc_dim > nq:
         raise ValueError("Number of encoded features must be less than or equal to number of qubits.")
     if shots < 1:
         raise ValueError("Number of shots must be at least 1.")
+    if isinstance(shots, MatrixLike):
+        if np.any(shots < 1):
+            raise ValueError("All shots must be at least 1.")
     if not (0 < train_size < 1):
         raise ValueError("Train size must be between 0 and 1.")
     
+    shots = np.array(shots, dtype = int)
+    stat = len(shots)
     split_idx = int(dim * train_size)
     y_train = targets[:split_idx]
     y_test = targets[split_idx:]
-
+    features = y_train.shape[1]
+    
     results_si = np.zeros((patches, 2 ** nq, dim))
-    results_sf = np.zeros((patches, 2 ** nq, dim))
+    results_sf = np.zeros((patches, 2 ** nq, stat, dim))
     for i in tqdm(range(patches), desc="Processing patches", disable = disable_progress_bar):
         x_patch = data_mapped[i]
         results_si[i], results_sf[i] = Reservoir(nq, x_patch, par[i], depth, shots)
-    results_sf = np.concatenate(results_sf, axis=0).T
+    results_sf = np.concatenate(results_sf, axis=0)
     results_si = np.concatenate(results_si, axis=0).T
     
     if global_properties is not None:
         print("Processing global properties...")
         par_mean = np.random.uniform(0, np.pi, size=(depth,  2 * nq))
         global_properties_mapped = map_angle(global_properties)
-        result_global_si, result_global_sf = Reservoir(nq, global_properties_mapped, par_mean, depth, shots, False)
+        result_global_si, result_global_sf = Reservoir(nq, global_properties_mapped, par_mean, depth, shots, disable_progress_bar)
         results_si = np.concatenate((results_si, result_global_si.T), axis=1)
-        results_sf = np.concatenate((results_sf, result_global_sf.T), axis=1)
+        results_sf = np.concatenate((results_sf, result_global_sf), axis=0)
     
     if patchwise_properties is not None:
         par_patch = np.random.uniform(0, np.pi, size=(patches, depth,  2 * nq))
         patchwise_properties_mapped = map_angle(patchwise_properties)
         results_local_si = np.zeros((patches, 2 ** nq, dim))
-        results_local_sf = np.zeros((patches, 2 ** nq, dim))
+        results_local_sf = np.zeros((patches, 2 ** nq, stat, dim))
         for i in tqdm(range(patches), desc="Processing local properties", disable = disable_progress_bar):
             x_patch_prop = patchwise_properties_mapped[i]
             results_local_si[i], results_local_sf[i] = Reservoir(nq, x_patch_prop, par_patch[i], depth, shots)
-        results_local_sf = np.concatenate(results_local_sf, axis=0).T
+        results_local_sf = np.concatenate(results_local_sf, axis=0)
         results_local_si = np.concatenate(results_local_si, axis=0).T
         results_si =  np.concatenate((results_si, results_local_si), axis=1)
-        results_sf =  np.concatenate((results_sf, results_local_sf), axis=1)
+        results_sf =  np.concatenate((results_sf, results_local_sf), axis=0)
+    
+    results_sf = np.transpose(results_sf, (1, 2, 0))
 
     x_train = results_si[:split_idx]
     x_test = results_si[split_idx:]
     W_si = training(x_train, y_train, regularize)
     y_pred_si = W_si.predict(x_test)
 
-    if shots > 1:
-        x_train_sf = results_sf[:split_idx]
-        x_test_sf = results_sf[split_idx:]
-        W_sf = training(x_train_sf, y_train, regularize)
-        y_pred_sf = W_sf.predict(x_test_sf)
+    if np.any(shots > 1):
+        y_pred_sf = np.zeros((stat, dim - split_idx, features))
+        for i in tqdm(range(stat), desc="Finite statistics training", disable = disable_progress_bar):
+            x_train_sf = results_sf[i, :split_idx]
+            x_test_sf = results_sf[i, split_idx:]
+            W_sf = training(x_train_sf, y_train, regularize)
+            y_pred_sf[i] = W_sf.predict(x_test_sf)
     else:
-        y_pred_sf = None
+        y_pred_sf = np.zeros_like(y_pred_si)
     
     return y_pred_si, y_pred_sf
