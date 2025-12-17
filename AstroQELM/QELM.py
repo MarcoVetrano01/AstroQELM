@@ -143,10 +143,6 @@ def training(x_train: np.ndarray, y_train: MatrixLike, regularize: bool = True) 
 
     return model
 
-from typing import Union
-from sklearn.linear_model import Ridge, RidgeCV
-
-MatrixLike = Union[np.ndarray, list]
 def _output(data: MatrixLike, nq: int , global_properties: np.ndarray | None = None, patchwise_properties: np.ndarray | None = None, depth: int = 1, shots: int | MatrixLike = 1024, disable_progress_bar: bool = False) -> MatrixLike:
     """Factorized QELM Wrapper
      Args:
