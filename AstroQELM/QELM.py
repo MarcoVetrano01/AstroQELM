@@ -135,7 +135,7 @@ def training(x_train: np.ndarray, y_train: MatrixLike, regularize: bool = True) 
      """
 
     if regularize:
-        model = RidgeCV(alphas=np.logspace(-7, 2, 100))
+        model = RidgeCV(alphas=np.logspace(-4, 2, 100))
     else:
         model = Ridge(alpha=0.0, solver = 'svd')
 
