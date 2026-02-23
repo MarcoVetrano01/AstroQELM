@@ -44,6 +44,30 @@ def AngleEncoding(nq: int, data: MatrixLike) -> QuantumCircuit:
 
     return quantum_circuits
 
+def DenseAngleEncoding(nq: int, data: MatrixLike) -> QuantumCircuit:
+
+    """Encodes data into a quantum circuit using RX gates. The number of encoded features must be n_features <= nq.
+     Args:
+         nq (int): Number of qubits.
+         data (MatrixLike): Input data to be encoded.
+         encoding_gate (str): Type of encoding gate to be used. Default is "RX".
+     Returns:
+         QuantumCircuit: Quantum circuit with encoded data.
+     """
+    
+    if not isinstance(data, MatrixLike):
+        raise TypeError("Data must be of type MatrixLike.")
+    
+    enc_dim = data.shape[0]
+    
+    quantum_circuits = QuantumCircuit(nq)
+
+    for i in range(0,enc_dim // 2):
+        quantum_circuits.rx(data[2 * i], i)
+        quantum_circuits.rz(data[2 * i + 1], i)
+
+    return quantum_circuits
+
 def DataReuploading(qc: QuantumCircuit, data: MatrixLike) -> QuantumCircuit:
     
     """Re-encodes data into a quantum circuit using RX gates. The number of encoded features must be n_features <= nq.
