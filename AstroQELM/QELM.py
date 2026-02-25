@@ -151,12 +151,12 @@ def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, encoding: Literal['ang
     # Create quantum circuit
     result_si = np.zeros((dim, 2 ** nq))        
     stat = len(shots)
-    quantum_circuits = QuantumCircuit(nq)
+    qc = QuantumCircuit(nq)
     for i in tqdm(range(dim), disable = disable_progress_bar):
         if encoding == 'angle':
-            qc = AngleEncoding(nq, data[i])
+            qc = AngleEncoding(qc, nq, data[i])
         elif encoding == 'dense_angle':
-            qc = DenseAngleEncoding(nq, data[i])
+            qc = DenseAngleEncoding(qc, nq, data[i])
         qc = ReservoirLayer(qc, par, depth)
         for _ in range(reup):
             qc = DataReuploading(qc, data[i])
