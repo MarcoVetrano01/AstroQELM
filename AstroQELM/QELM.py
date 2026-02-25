@@ -134,6 +134,7 @@ def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, encoding: Literal['ang
 
     elif encoding == 'dense':
         for i in tqdm(range(dim), disable = disable_progress_bar):
+            qc = QuantumCircuit(nq)
             qc = DenseAngleEncoding(qc, nq, data[i])
             qc = ReservoirLayer(qc, par, depth)
             for _ in range(reup):
