@@ -9,6 +9,8 @@ from scipy.integrate import quad
 from .utils import MatrixLike
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.decomposition import PCA
+from sklearn.cross_decomposition import PLSRegression
+
 from scipy.interpolate import interp1d
 
 #Constants
@@ -273,5 +275,46 @@ def preprocessing_pipeline(spectra: MatrixLike, norm_idx: MatrixLike, comps: int
     """
     global_properties, frag_spectra, patchwise_properties = _spectra_normalization(spectra, norm_idx)
     reduced_data = _feature_extraction(frag_spectra, comps)
+
+    return reduced_data, global_properties, patchwise_properties
+
+
+def _feature_extraction_plsr(frag_spectra: list, comps: int, y: MatrixLike, train_dim: float = 0.8):
+    """
+    Apply PLSR to each fragment of the spectra and reduce its dimensionality. Principal components are normalized in [0,1]
+    Args:
+        frag_spectra (list): List of fragmented spectra
+        comps (int): Number of principal components to keep for each fragment
+    Returns:
+        reduced_data (np.ndarray): Array of shape (Patches, samples, comps) containing the reduced spectra
+    """
+    patch = len(frag_spectra)
+    p_comp = PLSRegression(n_components=comps)
+    reduced_data = []
+    ytrain = y[:int(train_dim*len(y))]
+    for i in range(patch):
+        p_comp.fit(frag_spectra[i][:int(train_dim*len(y))], ytrain)
+        reduced_data.append(p_comp.transform(frag_spectra[i]))
+    reduced_data = np.array(reduced_data)
+    reduced_data += np.abs(np.min(reduced_data))
+    reduced_data = np.transpose(reduced_data, [1, 0, 2])
+    reduced_data = np.transpose(reduced_data/(np.max(reduced_data,0)),[1,0,2])
+    return reduced_data
+
+def preprocessing_pipeline_plsr(spectra: MatrixLike, y: MatrixLike, norm_idx: MatrixLike, comps: int, train_dim: float = 0.8):
+    """
+    Wrapper function to preprocess the spectra: normalization and feature extraction with PLSR.
+    Args:
+        spectra (MatrixLike): Matrix containing the spectra to be preprocessed
+        y (MatrixLike): Matrix containing the parameters to be predicted
+        norm_idx (MatrixLike): List containing the starting and ending indices of each patch to be normalized
+        comps (int): Number of principal components to keep for each fragment
+        train_dim (float): percentage of the data to be used for training the PLSR model for feature extraction
+    Returns:
+        reduced_data (np.ndarray): Array of shape (Patches, samples, comps) containing the reduced spectra
+        mean_spectra (MatrixLike): average of the spectra before normalization normalized in [0,1]
+    """
+    global_properties, frag_spectra, patchwise_properties = _spectra_normalization(spectra, norm_idx)
+    reduced_data = _feature_extraction_plsr(frag_spectra, comps, y, train_dim)
 
     return reduced_data, global_properties, patchwise_properties
