@@ -42,6 +42,31 @@ def AngleEncoding(quantum_circuit: QuantumCircuit, nq: int, data: MatrixLike) ->
 
     return quantum_circuit
 
+def IQPEmbedding(quantum_circuit: QuantumCircuit, nq: int, data: MatrixLike) -> QuantumCircuit:
+    """Encodes data into a quantum circuit using a IQP Embedding presented in Havlíček et al. 2018. The number of encoded features must be n_features <= nq.
+     Args:
+         quantum_circuit (QuantumCircuit): Input quantum circuit.
+         nq (int): Number of qubits.
+         data (MatrixLike): Input data to be encoded.
+     Returns:
+         QuantumCircuit: Quantum circuit with encoded data.
+     """
+    
+    if not isinstance(data, MatrixLike):
+        raise TypeError("Data must be of type MatrixLike.")
+    enc_dim = data.shape[0]
+    if enc_dim > nq:
+        raise ValueError("Number of encoded features must be less than or equal to number of qubits.")
+    
+    for i in range(enc_dim):
+        quantum_circuit.h(i)
+        quantum_circuit.rz(data[i], i)
+
+    for i in range(enc_dim - 1):
+        quantum_circuit.rzz(data[i] * data[i + 1], i, i + 1)
+
+    return quantum_circuit
+
 def DenseAngleEncoding(quantum_circuit: QuantumCircuit, nq: int, data: MatrixLike) -> QuantumCircuit:
 
     """Encodes data into a quantum circuit using RX gates. The number of encoded features must be n_features <= nq.
@@ -104,14 +129,18 @@ def FiniteStatistics(probabilities: MatrixLike, shots: int) -> np.ndarray:
 
     return stats
 
-def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, encoding: Literal['angle', 'dense'], reup: int = 1, depth: int = 1, shots: int | MatrixLike = 1024, disable_progress_bar: bool = True) -> np.ndarray:
+def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, encoding: Literal['angle', 'dense', 'iqp'] = 'angle', reup: int = 1, depth: int = 1, shots: int | MatrixLike = 1024, disable_progress_bar: bool = True) -> np.ndarray:
 
     """Reservoir Wrapper.
      Args:
          nq (int): Number of qubits.
          data (MatrixLike): Input data to be encoded.
+         par (np.ndarray): Parameters for the reservoir layer.
+         encoding (Literal['angle', 'dense', 'iqp']): Type of encoding to use. Default is 'angle'.
+         reup (int): Number of times to repeat the encoding and reservoir layer. Default is 1.
          depth (int): Depth of the reservoir layer.
          shots (int): Number of shots (samples) to simulate.
+         disable_progress_bar (bool): Whether to disable the progress bar. Default is True.
      Returns:
          np.ndarray: QELM output statistics.
      """
@@ -141,8 +170,16 @@ def Reservoir(nq: int, data: MatrixLike, par: np.ndarray, encoding: Literal['ang
                 qc = DenseAngleEncoding(qc, nq, data[i])
                 qc = ReservoirLayer(qc, par, depth)
             result_si[i] = Statevector(qc).probabilities()
-        
-
+    
+    elif encoding == 'iqp':
+        for i in tqdm(range(dim), disable = disable_progress_bar):
+            qc = QuantumCircuit(nq)
+            qc = IQPEmbedding(qc, nq, data[i])
+            qc = ReservoirLayer(qc, par, depth)
+            for _ in range(reup):
+                qc = IQPEmbedding(qc, nq, data[i])
+                qc = ReservoirLayer(qc, par, depth)
+            result_si[i] = Statevector(qc).probabilities()
 
     if np.any(shots > 1):
         result_sf = np.zeros((stat, dim, 2 ** nq))
@@ -179,13 +216,13 @@ def training(x_train: np.ndarray, y_train: MatrixLike, regularize: bool = True) 
 
     return model
 
-def _output(data: MatrixLike, nq: int, encoding: Literal['angle', 'dense'], reup: int = 1, global_properties: np.ndarray | None = None, patchwise_properties: np.ndarray | None = None, depth: int = 1, shots: int | MatrixLike = 1024, disable_progress_bar: bool = False) -> MatrixLike:
+def _output(data: MatrixLike, nq: int, encoding: Literal['angle', 'dense','iqp'], reup: int = 1, global_properties: np.ndarray | None = None, patchwise_properties: np.ndarray | None = None, depth: int = 1, shots: int | MatrixLike = 1024, disable_progress_bar: bool = False) -> MatrixLike:
     """Factorized QELM Wrapper
      Args:
          data (MatrixLike): Input data to be encoded of shape (patches, n_samples, n_features).
          targets (MatrixLike): Target values of shape (n_samples, n_outputs).
          nq (int): Number of qubits.
-         encoding (Literal['angle', 'dense']): Type of encoding to use. Default is 'angle'.
+         encoding (Literal['angle', 'dense','iqp']): Type of encoding to use. Default is 'angle'.
          means (np.ndarray | None): Mean values for data normalization. 
          depth (int): Depth of the reservoir layer.
          shots (int): Number of shots (samples) to simulate.
@@ -199,7 +236,6 @@ def _output(data: MatrixLike, nq: int, encoding: Literal['angle', 'dense'], reup
     dim = data.shape[1]
     enc_dim = data.shape[2]
     stat = len(shots)
-    
     if enc_dim > nq:
         raise ValueError("Number of encoded features must be less than or equal to number of qubits.")
     
@@ -273,14 +309,14 @@ def _windows_testing(x: MatrixLike, xtest: MatrixLike, n_windows: int, y_special
     return ytest_si, W_windows_si
 
 
-def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , encoding: Literal['angle', 'dense'], reup: int = 1, global_properties: np.ndarray | None = None, patchwise_properties: np.ndarray | None = None, depth: int = 1, shots: int | MatrixLike = 1024, train_size: float = 0.5, train_size_special: float | None = 0.3, n_windows:int | None = 5, special_index: int | None = 6, regularize: bool = True, disable_progress_bar: bool = False) -> MatrixLike:
+def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , encoding: Literal['angle', 'dense', 'iqp'], reup: int = 1, global_properties: np.ndarray | None = None, patchwise_properties: np.ndarray | None = None, depth: int = 1, shots: int | MatrixLike = 1024, train_size: float = 0.5, train_size_special: float | None = 0.3, n_windows:int | None = 5, special_index: int | None = 6, regularize: bool = True, disable_progress_bar: bool = False) -> MatrixLike:
 
     """Factorized QELM Wrapper
      Args:
          data (MatrixLike): Input data to be encoded of shape (patches, n_samples, n_features).
          targets (MatrixLike): Target values of shape (n_samples, n_outputs).
          nq (int): Number of qubits.
-         encoding (Literal['angle', 'dense']): Type of encoding to use. Default is 'angle'.
+         encoding (Literal['angle', 'dense', 'iqp']): Type of encoding to use. Default is 'angle'.
          means (np.ndarray | None): Mean values for data normalization. 
          depth (int): Depth of the reservoir layer.
          shots (int): Number of shots (samples) to simulate.
@@ -293,7 +329,6 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , encoding: Li
     data = np.array(data)
     targets = np.array(targets)
     dim = data.shape[1]
-
     if isinstance(shots, int):
         shots = np.array([shots], dtype = int)
     else:
@@ -351,8 +386,8 @@ def FactorizedQELM(data: MatrixLike, targets: MatrixLike, nq: int , encoding: Li
             for i in tqdm(range(stat), desc="Finite statistics training", disable = disable_progress_bar):
                 x = results_sf[i, a : b]
                 xtest = results_sf[i, total_train_size :]
-
                 ypred_sf[i], W_windows_sf = _windows_testing(x, xtest, n_windows, y_special_sf[i], y_train_windows, regularize, test_size, features, W_special_sf, special_index)
+            ypred_sf = ypred_sf
         else:
             ypred_sf = np.zeros_like(ypred_si)
     
